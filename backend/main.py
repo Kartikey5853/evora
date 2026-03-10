@@ -104,6 +104,10 @@ def root():
 def health_check():
     return {"ok": True}
 
+@app.head("/health")
+def health_head():
+    return {"ok": True}
+
 
 # ------------------------------------------------------
 # ROUTER REGISTRATION (ENABLE WHEN READY)

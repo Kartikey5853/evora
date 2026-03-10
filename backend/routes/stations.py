@@ -1,56 +1,47 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 import math
-from dependencies import get_db
+from dependencies import get_db, get_current_admin
 from models.station import Station
 from models.charger import Charger
 from models.slot import Slot
 from schema.station import StationCreate, StationOut
 from datetime import datetime, date, time, timedelta
 from models.booking import Booking
+from models.booking_slot import BookingSlot
 
 router = APIRouter()
 
+def _utcnow() -> datetime:
+    return datetime.utcnow()
+
 def cleanup_expired_bookings(db: Session):
-    now = datetime.utcnow()
-    grace = timedelta(hours=24)
+    """Legacy helper retained for station routes.
 
-    # Complete bookings past grace and free their slots
-    expired = (
-        db.query(Booking, Slot)
-        .join(Slot, Booking.slot_id == Slot.id)
-        .filter(
-            Booking.booking_status.in_(["PAID", "IN_PROGRESS"]),
-            Slot.end_time + grace <= now
-        )
-        .all()
-    )
-
-    for booking, slot in expired:
-        booking.booking_status = "COMPLETED"
-        slot.is_available = True
-
-    db.commit()
+    NOTE: Booking <-> Slot association is via BookingSlot now.
+    We no longer try to free slots here; lifecycle/cancel handles it.
+    """
+    return
 
 
 def roll_free_slots_forward(db: Session):
+    """Roll ended AVAILABLE slots forward by 1 day.
+
+    Uses Slot.status instead of removed Slot.is_available.
     """
-    Roll ended free slots forward by 1 day to preserve daily availability cycles
-    when explicit templates are not configured.
-    """
-    now = datetime.utcnow()
+    now = _utcnow()
     ended_free_slots = (
         db.query(Slot)
         .filter(
             Slot.end_time <= now,
-            Slot.is_available == True
+            Slot.status == "AVAILABLE",
         )
         .all()
     )
     for slot in ended_free_slots:
         slot.start_time = slot.start_time + timedelta(days=1)
         slot.end_time = slot.end_time + timedelta(days=1)
-        slot.is_available = True
+        slot.status = "AVAILABLE"
     if ended_free_slots:
         db.commit()
 
@@ -191,7 +182,7 @@ def get_station_chargers(station_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{station_id}/chargers-with-slots")
-def get_station_chargers_with_slots(station_id: str, db: Session = Depends(get_db)):
+def get_chargers_with_slots(station_id: str, db: Session = Depends(get_db)):
     chargers = (
         db.query(Charger)
         .filter(Charger.station_id == station_id)
@@ -214,16 +205,20 @@ def get_station_chargers_with_slots(station_id: str, db: Session = Depends(get_d
             "id": s.id,
             "start_time": s.start_time,
             "end_time": s.end_time,
-            "is_available": s.is_available,
+            "status": getattr(s, "status", None),
         })
 
     return [
         {
             "id": c.id,
+            "station_id": c.station_id,
             "name": getattr(c, "name", None),
             "charger_type": c.charger_type,
-            "power_kw": c.power_kw,
-            "price_per_hour": c.price_per_hour,
+            "power_kw": getattr(c, "power_kw", None),
+            "power_output_kw": getattr(c, "power_output_kw", None),
+            "price_per_hour": getattr(c, "price_per_hour", None),
+            "default_price_30min": getattr(c, "default_price_30min", None),
+            "is_active": getattr(c, "is_active", True),
             "slots": slots_by_charger.get(c.id, []),
         }
         for c in chargers
@@ -231,14 +226,21 @@ def get_station_chargers_with_slots(station_id: str, db: Session = Depends(get_d
 
 
 @router.post("/", response_model=StationOut)
-def create_station(station: StationCreate, db: Session = Depends(get_db)):
+def create_station(
+    station: StationCreate,
+    db: Session = Depends(get_db),
+    admin_id: str = Depends(get_current_admin),
+):
+    # Always use the authenticated admin's ID as host_id
     db_station = Station(
         name=station.name,
         address=station.address,
         latitude=station.latitude,
         longitude=station.longitude,
-        host_id=station.host_id,
-        is_active=True
+        host_id=admin_id,
+        is_active=False,
+        document_url=station.document_url or None,
+        approval_status="PENDING",
     )
     db.add(db_station)
     db.commit()
@@ -276,11 +278,13 @@ def get_station_availability(
         .count()
     )
 
+    now = _utcnow()
     available_slots = (
         db.query(Slot)
         .filter(
             Slot.charger_id.in_(charger_ids),
-            Slot.is_available == True
+            Slot.status == "AVAILABLE",
+            Slot.end_time >= now,
         )
         .count()
     )
@@ -296,17 +300,22 @@ def get_station_slots(
     station_id: str,
     db: Session = Depends(get_db)
 ):
-    """
-    Booking-safe endpoint.
-    Returns ONLY available slots.
+    """User slot list endpoint.
+
+    Deterministic display:
+      - DISABLED if Slot.status==DISABLED
+      - EXPIRED if slot.end_time < now (derived, not stored)
+      - BOOKED if Slot.status==BOOKED and booking_status==UPCOMING
+      - GRACE if Slot.status==GRACE
+      - AVAILABLE if Slot.status==AVAILABLE
+
+    recently_released: True if released_at within last 2 minutes.
     """
 
-    # 🔑 CLEANUP FIRST
+    # Keep existing regeneration hooks (do not change lifecycle)
     cleanup_expired_bookings(db)
-    # 🔁 Roll forward ended free slots to maintain daily cycles
     roll_free_slots_forward(db)
 
-    # ensure daily regeneration based on templates
     charger_ids = (
         db.query(Charger.id)
         .filter(Charger.station_id == station_id)
@@ -316,28 +325,46 @@ def get_station_slots(
     if charger_ids_list:
         ensure_today_slots(db, station_id, charger_ids_list)
 
-    slots = (
-        db.query(Slot, Charger)
+    now = _utcnow()
+    recent_cutoff = now - timedelta(minutes=2)
+
+    rows = (
+        db.query(Slot, Charger, Booking)
         .join(Charger, Slot.charger_id == Charger.id)
-        .filter(
-            Charger.station_id == station_id,
-            Slot.is_available == True  # 🔒 CRITICAL LINE
-        )
+        .outerjoin(BookingSlot, BookingSlot.slot_id == Slot.id)
+        .outerjoin(Booking, Booking.id == BookingSlot.booking_id)
+        .filter(Charger.station_id == station_id)
         .order_by(Slot.start_time)
         .all()
     )
+
+    def display_status(slot: Slot, booking: Booking | None) -> str:
+        if slot.status == "DISABLED":
+            return "DISABLED"
+        if slot.end_time < now:
+            return "EXPIRED"
+        if slot.status == "BOOKED" and booking and booking.booking_status == "UPCOMING":
+            return "BOOKED"
+        if slot.status == "GRACE":
+            return "GRACE"
+        if slot.status == "BOOKED":
+            return "BOOKED"
+        return "AVAILABLE"
 
     return [
         {
             "id": slot.id,
             "start_time": slot.start_time,
             "end_time": slot.end_time,
-            "is_available": slot.is_available,
+            "status": display_status(slot, booking),
+            "recently_released": bool(getattr(slot, "released_at", None) and slot.released_at >= recent_cutoff),
             "price_per_hour": charger.price_per_hour,
             "charger_type": charger.charger_type,
+            "charger_id": charger.id,
         }
-        for slot, charger in slots
+        for slot, charger, booking in rows
     ]
+
 
 @router.post("/{station_id}/slots")
 def add_slot_to_station(
@@ -382,7 +409,7 @@ def add_slot_to_station(
         charger_id=charger_id,
         start_time=start_time,   # ✅ datetime
         end_time=end_time,       # ✅ datetime
-        is_available=True
+        status="AVAILABLE",
     )
 
     db.add(new_slot)
@@ -390,6 +417,7 @@ def add_slot_to_station(
     db.refresh(new_slot)
 
     return {"id": new_slot.id}
+
 
 @router.post("/{station_id}/chargers")
 def add_charger_to_station(
@@ -399,18 +427,32 @@ def add_charger_to_station(
 ):
     charger_type = charger_data.get("charger_type")
     power_kw = charger_data.get("power_kw")
-    if not charger_type or not power_kw:
+    if not charger_type or power_kw is None:
         raise HTTPException(status_code=400, detail="Missing required fields")
+
+    # Prefer explicit default_price_30min; otherwise derive from price_per_hour
+    price_per_hour = charger_data.get("price_per_hour", 100)
+    default_price_30min = charger_data.get("default_price_30min")
+    if default_price_30min is None:
+        try:
+            default_price_30min = float(price_per_hour) / 2.0
+        except Exception:
+            default_price_30min = 0
+
     new_charger = Charger(
         station_id=station_id,
+        name=charger_data.get("name"),
         charger_type=charger_type,
         power_kw=power_kw,
-        price_per_hour=charger_data.get("price_per_hour", 100)
+        power_output_kw=float(power_kw) if power_kw is not None else None,
+        price_per_hour=price_per_hour,
+        default_price_30min=default_price_30min,
     )
     db.add(new_charger)
     db.commit()
     db.refresh(new_charger)
     return {"id": new_charger.id}
+
 
 @router.put("/{station_id}")
 def update_station(station_id: str, data: dict = Body(...), db: Session = Depends(get_db)):
@@ -430,6 +472,7 @@ def update_station(station_id: str, data: dict = Body(...), db: Session = Depend
         "longitude": station.longitude,
         "is_active": station.is_active,
     }
+
 
 @router.delete("/chargers/{charger_id}")
 def delete_charger(charger_id: str, db: Session = Depends(get_db)):
@@ -478,7 +521,7 @@ def ensure_today_slots(db: Session, station_id: str, charger_ids: list[str]):
                 charger_id=cid,
                 start_time=start_dt,
                 end_time=end_dt,
-                is_available=True
+                status="AVAILABLE",
             )
             db.add(new_slot)
     db.commit()

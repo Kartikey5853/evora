@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, MapPin } from 'lucide-react';
+import { X, MapPin, FileText } from 'lucide-react';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import { stationAPI } from '../../lib/api';
 
@@ -16,6 +16,7 @@ const AddStationModal = ({ isOpen, onClose, onSuccess }: AddStationModalProps) =
     address: '',
     latitude: '',
     longitude: '',
+    document_url: '',
   });
 
   if (!isOpen) return null;
@@ -30,10 +31,11 @@ const AddStationModal = ({ isOpen, onClose, onSuccess }: AddStationModalProps) =
         address: formData.address,
         latitude: parseFloat(formData.latitude),
         longitude: parseFloat(formData.longitude),
+        document_url: formData.document_url,
       });
       onSuccess?.();
       onClose();
-      setFormData({ name: '', address: '', latitude: '', longitude: '' });
+      setFormData({ name: '', address: '', latitude: '', longitude: '', document_url: '' });
     } catch (error) {
       console.error('Failed to add station:', error);
     } finally {
@@ -128,6 +130,23 @@ const AddStationModal = ({ isOpen, onClose, onSuccess }: AddStationModalProps) =
             ⚠️ Map selection for coordinates will be handled separately
           </p>
 
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              <span className="flex items-center gap-1"><FileText className="w-4 h-4" /> Proof Document URL</span>
+            </label>
+            <input
+              type="url"
+              value={formData.document_url}
+              onChange={(e) => setFormData({ ...formData, document_url: e.target.value })}
+              className="input-clean"
+              placeholder="https://drive.google.com/file/..."
+              required
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Upload your station permit/license to Google Drive or similar and paste the link. Required for approval.
+            </p>
+          </div>
+
           <div className="flex gap-3 pt-4">
             <button
               type="button"
@@ -138,10 +157,10 @@ const AddStationModal = ({ isOpen, onClose, onSuccess }: AddStationModalProps) =
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !formData.document_url}
               className="btn-primary flex-1 flex items-center justify-center gap-2"
             >
-              {loading ? <LoadingSpinner size="sm" /> : 'Add Station'}
+              {loading ? <LoadingSpinner size="sm" /> : 'Submit for Approval'}
             </button>
           </div>
         </form>

@@ -18,4 +18,7 @@ class Station(Base):
 
     is_active = Column(Boolean, default=True)
 
+    document_url = Column(String, nullable=True)
+    approval_status = Column(String, default="PENDING")  # PENDING | APPROVED | REJECTED
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -8,6 +8,7 @@ class StationCreate(BaseSchema):
     latitude: str
     longitude: str
     host_id: str
+    document_url: str = ""
 
 
 class StationOut(BaseSchema):
@@ -17,4 +18,6 @@ class StationOut(BaseSchema):
     latitude: str
     longitude: str
     is_active: bool
+    document_url: str | None = None
+    approval_status: str | None = None
     created_at: datetime

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, Boolean, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -16,7 +16,14 @@ class User(Base):
 
     google_id = Column(String, nullable=True)
 
+    # Profile/setup fields
+    profile_pic_url = Column(String, nullable=True)
+    is_verified = Column(Boolean, default=False, nullable=False)
+    is_profile_complete = Column(Boolean, default=False, nullable=False)
+
     home_lat = Column(String, nullable=True)
     home_lng = Column(String, nullable=True)
+
+    wallet_balance = Column(Float, default=0.0, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

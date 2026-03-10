@@ -22,7 +22,7 @@ def seed_bookings():
         transaction_id="TXN-SEED-001",
         ticket_id="TICKET-SEED-001",
         amount=499.0,
-        booking_status="PAID",
+        booking_status="UPCOMING",
         created_at=datetime.utcnow()
     )
 

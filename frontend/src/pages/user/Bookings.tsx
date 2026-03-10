@@ -9,7 +9,7 @@ import {
 } from "lucide-react"
 import { ArrowLeft } from "lucide-react"
 import { useNavigate } from "react-router-dom"
-import { carAPI ,stationAPI , slotAPI } from "@/lib/api"
+import { carAPI ,stationAPI , slotAPI, bookableCarAPI } from "@/lib/api"
 import L from "leaflet"
 
 
@@ -126,7 +126,7 @@ useEffect(() => {
 useEffect(() => {
   const fetchVehicles = async () => {
     try {
-      const res = await carAPI.getCars()
+      const res = await bookableCarAPI.getBookableCars()
       setVehicles(res.data)
     } catch (err) {
       console.error("Failed to load vehicles", err)
@@ -136,29 +136,34 @@ useEffect(() => {
   fetchVehicles()
 }, [])
 
-
-  
-useEffect(() => {
-  const fetchStations = async () => {
-    try {
-      const res = await stationAPI.getStations()
-      setStations(res.data)
-      setFilteredStations(res.data) // default: show all
-    } catch (err) {
-      console.error("Failed to fetch stations", err)
-    }
-  }
-
-  fetchStations()
-}, [])
+// REMOVE: this effect was overwriting the nearby-stations list with all stations
+// useEffect(() => {
+//   const fetchStations = async () => {
+//     try {
+//       const res = await stationAPI.getStations()
+//       setStations(res.data)
+//       setFilteredStations(res.data) // default: show all
+//     } catch (err) {
+//       console.error("Failed to fetch stations", err)
+//     }
+//   }
+//
+//   fetchStations()
+// }, [])
 
 const filterStationsByVehicle = (vehicle: Vehicle) => {
-  const compatible = stations.filter(station =>
-    station.supported_charger_types.includes(vehicle.charger_type)
+  const compatible = stations.filter((station) =>
+    station.supported_charger_types?.includes(vehicle.charger_type)
   )
-
   setFilteredStations(compatible)
 }
+
+// If user clears vehicle selection, restore nearby stations
+useEffect(() => {
+  if (!selectedVehicle) {
+    setFilteredStations(stations)
+  }
+}, [selectedVehicle, stations])
 
 
   return (
@@ -167,7 +172,7 @@ const filterStationsByVehicle = (vehicle: Vehicle) => {
       {/* ----------------------------
          LEFT OVERLAY PANEL
       ----------------------------- */}
-      <div className="w-full md:w-[380px] bg-white border-r border-border z-10 flex flex-col">
+      <div className="w-full md:w-[380px] bg-card border-r border-border z-10 flex flex-col">
 
   {/* Header */}
   <div className="p-5 border-b space-y-3">
@@ -253,7 +258,7 @@ const filterStationsByVehicle = (vehicle: Vehicle) => {
           {selectedStation.supported_charger_types.map(type => (
             <span
               key={type}
-              className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700"
+              className="text-xs px-2 py-1 rounded-full bg-accent text-primary"
             >
               {type}
             </span>
@@ -292,7 +297,7 @@ const filterStationsByVehicle = (vehicle: Vehicle) => {
         No slots available
       </p>
     ) : (
-      <p className="text-sm text-emerald-600 font-medium">
+      <p className="text-sm text-primary font-medium">
         {availableSlots} slots available
       </p>
     )}
@@ -316,9 +321,9 @@ const filterStationsByVehicle = (vehicle: Vehicle) => {
   className={`
     w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2
     ${!selectedStation || availableSlots === 0
-      ? "bg-emerald-600/50 cursor-not-allowed"
-      : "bg-emerald-600 hover:bg-emerald-700"}
-    text-white
+      ? "bg-primary/50 cursor-not-allowed"
+      : "bg-primary hover:bg-primary/90"}
+    text-primary-foreground
   `}
 >
   Proceed to Slot Booking
@@ -372,7 +377,7 @@ const filterStationsByVehicle = (vehicle: Vehicle) => {
           {vehicleDialogOpen && (
   <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40">
 
-    <div className="bg-white w-full max-w-md rounded-2xl shadow-lg p-6 space-y-5">
+    <div className="bg-card w-full max-w-md rounded-2xl shadow-lg p-6 space-y-5">
 
       <h2 className="text-lg font-semibold">
         Select Vehicle
@@ -386,7 +391,7 @@ const filterStationsByVehicle = (vehicle: Vehicle) => {
             onClick={() => setTempVehicle(v)}
             className={`p-4 rounded-xl border cursor-pointer transition
               ${tempVehicle?.id === v.id
-                ? "border-emerald-600 bg-emerald-50"
+                ? "border-primary bg-accent"
                 : "hover:bg-muted"}`}
           >
             <p className="font-medium">
@@ -417,7 +422,7 @@ const filterStationsByVehicle = (vehicle: Vehicle) => {
   filterStationsByVehicle(tempVehicle)
   setVehicleDialogOpen(false)
 }}
-          className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm disabled:opacity-50"
+          className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm disabled:opacity-50"
         >
           Confirm
         </button>

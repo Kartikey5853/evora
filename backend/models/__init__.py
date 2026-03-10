@@ -5,3 +5,7 @@ from models.station import Station
 from models.charger import Charger
 from models.slot import Slot
 from models.booking import Booking
+from .otp import OTP
+from .booking_slot import BookingSlot
+from .message import Message
+from .wallet_transaction import WalletTransaction

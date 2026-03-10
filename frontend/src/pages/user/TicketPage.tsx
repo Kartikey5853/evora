@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from "react-router-dom"
 import QRCode from "react-qr-code"
 import { MapPin, AlertTriangle, ArrowLeft } from "lucide-react"
+import MagicBentoCard from "@/components/ui/MagicBentoCard"
 
 const TicketPage = () => {
   const location = useLocation()
@@ -16,18 +17,24 @@ const TicketPage = () => {
 
   const mapsUrl = `https://www.google.com/maps?q=${station.latitude},${station.longitude}`
 
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="max-w-md w-full p-6 rounded-xl border space-y-6">
+  return (    <div className="min-h-screen bg-background flex items-center justify-center">
+      <MagicBentoCard enableSpotlight enableParticles className="max-w-md w-full p-6 space-y-6">
 
         {/* HEADER */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2">
           <button
             onClick={() => navigate("/dashboard")}
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Dashboard
+          </button>
+
+          <button
+            onClick={() => navigate("/dashboard/transactions")}
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            View in Transactions
           </button>
         </div>
 
@@ -66,7 +73,7 @@ const TicketPage = () => {
           href={mapsUrl}
           target="_blank"
           rel="noreferrer"
-          className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-emerald-600 text-white font-medium"
+          className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-primary text-primary-foreground font-medium"
         >
           <MapPin className="w-4 h-4" />
           Navigate to Station
@@ -81,15 +88,14 @@ const TicketPage = () => {
           </p>
         </div>
 
-        {/* NEXT STEP CTA */}
-        <button
+        {/* NEXT STEP CTA */}        <button
           onClick={() => navigate("/dashboard")}
           className="w-full py-3 rounded-xl border font-medium hover:bg-muted"
         >
           View My Bookings
         </button>
 
-      </div>
+      </MagicBentoCard>
     </div>
   )
 }

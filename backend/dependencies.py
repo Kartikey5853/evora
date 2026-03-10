@@ -6,6 +6,13 @@ from jose import jwt
 from fastapi import Request, HTTPException, status
 from database.database import SessionLocal
 
+# load env
+import os
+from dotenv import load_dotenv
+import random
+
+load_dotenv()
+
 # ======================================================
 # DATABASE DEPENDENCY
 # ======================================================
@@ -23,12 +30,16 @@ def get_db():
 
 
 # ======================================================
-# JWT CONFIG (HACKATHON SAFE)
+# JWT CONFIG
 # ======================================================
 
-SECRET_KEY = "LAX_EV_HACKATHON_SECRET"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 24
+SECRET_KEY = os.getenv("SECRET_KEY", "LAX_EV_HACKATHON_SECRET")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "24"))
+
+
+def generate_otp() -> str:
+    return str(random.randint(100000, 999999))
 
 
 def create_access_token(
@@ -62,8 +73,6 @@ def decode_access_token(token: str):
         return None
 
 
-
-
 def get_current_user(request: Request) -> str:
     auth_header = request.headers.get("Authorization")
 
@@ -83,10 +92,28 @@ def get_current_user(request: Request) -> str:
 
     payload = decode_access_token(token)
 
-    if not payload or "user_id" not in payload:
+    if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
 
-    return payload["user_id"]
+    # user tokens carry user_id; admin tokens carry admin_id
+    if "user_id" in payload:
+        return payload["user_id"]
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid token",
+    )
+
+
+def get_current_admin(request: Request) -> str:
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header missing")
+    token = auth_header.replace("Bearer ", "")
+    payload = decode_access_token(token)
+    if not payload or "admin_id" not in payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+    return payload["admin_id"]

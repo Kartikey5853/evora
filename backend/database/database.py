@@ -1,21 +1,30 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from dotenv import load_dotenv
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "lax_ev_stations.db")
+load_dotenv()
 
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
+# Supabase PostgreSQL connection (production)
+SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
+
+if not SUPABASE_DB_URL:
+    raise RuntimeError("SUPABASE_DB_URL is not set in .env")
+
+# SQLAlchemy uses postgresql+psycopg2 dialect
+DATABASE_URL = SUPABASE_DB_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False}
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
 )
 
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
-    bind=engine
+    bind=engine,
 )
 
 Base = declarative_base()

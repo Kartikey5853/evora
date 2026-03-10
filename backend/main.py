@@ -55,29 +55,26 @@ app = create_app()
 @app.on_event("startup")
 def startup_event():
     """
-    Create all database tables.
-    Hackathon-safe approach.
-    """    
+    Create all database tables on Supabase PostgreSQL.
+    """
     base.Base.metadata.create_all(bind=engine)
 
-    # Run emergency system migration (adds columns if missing)
-    try:
-        from database.migrate_emergency import migrate as migrate_emergency
-        migrate_emergency()
-    except Exception as e:
-        print(f"[WARN] emergency migration: {e}")
+    # SQLite-specific migrations skipped for Supabase PostgreSQL
+    # try:
+    #     from database.migrate_emergency import migrate as migrate_emergency
+    #     migrate_emergency()
+    # except Exception as e:
+    #     print(f"[WARN] emergency migration: {e}")
 
-    # Run wallet + station approval migration
-    try:
-        from database.migrate_wallet_station import migrate as migrate_wallet_station
-        migrate_wallet_station()
-    except Exception as e:
-        print(f"[WARN] wallet/station migration: {e}")
+    # try:
+    #     from database.migrate_wallet_station import migrate as migrate_wallet_station
+    #     migrate_wallet_station()
+    # except Exception as e:
+    #     print(f"[WARN] wallet/station migration: {e}")
 
     # Start minimal deterministic lifecycle scheduler
     try:
         from booking_domain.lifecycle_scheduler import start as start_minimal_scheduler
-
         start_minimal_scheduler()
     except Exception as e:
         print(f"[WARN] minimal lifecycle scheduler failed to start: {e}")

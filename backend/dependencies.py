@@ -33,7 +33,7 @@ def get_db():
 # JWT CONFIG
 # ======================================================
 
-SECRET_KEY = os.getenv("SECRET_KEY", "LAX_EV_HACKATHON_SECRET")
+SECRET_KEY = os.getenv("SUPABASE_JWT_SECRET") or os.getenv("SECRET_KEY", "LAX_EV_HACKATHON_SECRET")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "24"))
 
